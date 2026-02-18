@@ -1,0 +1,118 @@
+---
+description: Prevents Cross-Site Request Forgery (CSRF) attacks
+alwaysApply: true
+---
+
+# CSRF Protection
+
+## Vulnerability Description
+
+Cross-Site Request Forgery (CSRF) exploits the browser's automatic sending of cookies and credentials with requests to a target site. An attacker tricks a victim into loading a page that submits a request to the target site on the victim's behalf. If the victim is authenticated, the request executes with their privileges. State-changing operations (password change, fund transfer, data modification) are the primary targets.
+
+## Anti-Patterns to Avoid
+
+### GET for State Changes
+
+```
+GET /api/transfer?to=attacker&amount=1000
+GET /api/user/delete?id=123
+GET /api/settings/email?new=attacker@evil.com
+```
+
+GET requests can be triggered by `<img>`, `<link>`, or redirects. They must never perform state changes.
+
+### Missing Anti-CSRF Tokens
+
+```
+<form action="/api/update" method="POST">
+  <input name="email" value="user@example.com">
+  <button type="submit">Save</button>
+</form>
+```
+
+Without a token, an attacker can craft a form on a malicious site that submits to the same endpoint with the victim's cookies.
+
+### Token in URL or GET
+
+```
+<img src="/api/action?csrf_token=abc123">
+GET /api/action?csrf_token=abc123
+```
+
+Tokens in URLs leak via Referer, browser history, and logs. They must be in the request body or a custom header for POST/PUT/DELETE/PATCH.
+
+### Weak Token Validation
+
+```
+if (request.token == session.token) { proceed() }
+```
+
+Use constant-time comparison to prevent timing attacks. Validate that the token exists, matches the session, and has not been used in a replay-sensitive flow if required.
+
+### Overly Permissive CORS
+
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Credentials: true
+```
+
+Combining wildcard origin with credentials enables cross-origin requests with cookies. Restrict origins to trusted domains.
+
+### Ignoring Origin/Referer
+
+Relying solely on cookies without checking Origin or Referer leaves requests vulnerable if tokens are not implemented or are bypassed.
+
+## Secure Patterns
+
+### Anti-CSRF Tokens for State-Changing Operations
+
+Issue a cryptographically random token per session (or per request for sensitive actions). Include it in forms and validate on the server:
+
+**Server:** Generate token, store in session, include in form or API response.
+
+**Client:** Send token in request body (form field) or custom header (e.g., `X-CSRF-Token`).
+
+**Server:** Validate that the token in the request matches the session token before processing.
+
+Use POST, PUT, DELETE, or PATCH for all state-changing operations. Require the token for these methods.
+
+### SameSite Cookie Attribute
+
+```
+Set-Cookie: session=abc123; SameSite=Strict; Secure; HttpOnly
+Set-Cookie: session=abc123; SameSite=Lax; Secure; HttpOnly
+```
+
+- `SameSite=Strict`: Cookie not sent on cross-site requests. Best for sensitive actions.
+- `SameSite=Lax`: Cookie sent on top-level navigations (e.g., link click) but not on cross-site subrequests (e.g., form POST from another site). Balances security and usability.
+
+Use `SameSite=Lax` or `Strict` for session and authentication cookies. Reserve `SameSite=None` only when cross-site requests are required, and ensure `Secure` is set.
+
+### Verify Origin and Referer Headers
+
+For state-changing requests, validate:
+
+```
+Origin: https://trusted-app.example.com
+Referer: https://trusted-app.example.com/dashboard
+```
+
+Reject requests where Origin or Referer is missing, does not match the expected host, or uses an unexpected scheme (e.g., `null`, `file`). Use as defense-in-depth alongside tokens; some environments strip Referer for privacy.
+
+### Use Framework CSRF Middleware
+
+Enable built-in CSRF protection when available. Ensure it is applied to all state-changing routes and that tokens are correctly included in forms and AJAX requests. Configure SameSite and Secure for cookies as recommended by the framework.
+
+### Double-Submit Cookie Pattern
+
+For stateless or cross-domain scenarios, set a cookie with a random value and require the same value in a request header or body. The attacker cannot read the cookie from another origin, so they cannot forge the request. Ensure the cookie is SameSite and Secure where appropriate.
+
+### Idempotency and Confirmation for Critical Actions
+
+For high-impact operations (e.g., password change, large transfer), require re-authentication or a second confirmation step. This reduces the impact of a single forged request.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| CWE | 352 (Cross-Site Request Forgery) |

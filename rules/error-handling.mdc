@@ -1,0 +1,185 @@
+---
+description: Error handling to prevent information disclosure and ensure secure failure behavior
+alwaysApply: true
+---
+
+# Error Handling
+
+## Vulnerability Description
+
+Improper error handling discloses sensitive information (stack traces, file paths, database structure, internal logic) to attackers through error messages, logs, or responses. Unhandled exceptions can leave the system in an inconsistent or insecure state. Generic errors shown to users combined with detailed server-side logging prevent information disclosure while preserving debugging capability.
+
+## Anti-Patterns to Avoid
+
+### Exposing Stack Traces to Users
+
+```
+catch (e) {
+  return response(500, e.stack)
+}
+```
+
+### Revealing Internal Paths or Architecture
+
+```
+return "File not found: /var/app/config/secrets.yaml"
+return "Database error: connection to 10.0.1.5:5432 failed"
+return "Table 'users' doesn't exist"
+```
+
+### Different Error Messages for Security-Critical Paths
+
+```
+if (!user_exists(username)) return "Username not found"
+if (!verify_password(password)) return "Invalid password"
+```
+
+### Unhandled Exceptions
+
+```
+data = parse_json(request.body)
+process(data)
+```
+
+### Leaving System in Insecure State on Error
+
+```
+begin_transaction()
+update_balance(account, -amount)
+send_money(recipient, amount)
+commit()
+```
+
+### Logging Sensitive Data in Errors
+
+```
+catch (e) {
+  log("Error: " + e.message + " for user " + password)
+}
+```
+
+### Default Error Pages with Verbose Output
+
+```
+debug_mode = true
+show_detailed_errors = true
+```
+
+### Relying on Framework Default Error Responses
+
+```
+throw new Exception("Connection failed: " + connection_string)
+```
+
+## Secure Patterns
+
+### Return Generic Error Messages to Users
+
+```
+return error(500, "An error occurred. Please try again later.")
+return error(404, "The requested resource was not found.")
+return error(401, "Authentication failed.")
+```
+
+Never expose stack traces, file paths, SQL, connection strings, or internal logic to users. Use consistent, generic messages for each error category.
+
+### Log Detailed Errors Server-Side Only
+
+```
+catch (e) {
+  log.error("Database error", { error: e.message, stack: e.stack, request_id: id })
+  return error(500, "An error occurred. Please try again later.")
+}
+```
+
+Log full details (message, stack, context) to server-side logs with appropriate access controls. Ensure logs are not exposed via API or UI.
+
+### Handle All Exceptions
+
+```
+try {
+  data = parse_json(request.body)
+  process(data)
+} catch (ParseError) {
+  return error(400, "Invalid request format")
+} catch (ValidationError e) {
+  return error(400, "Invalid input")
+} catch (e) {
+  log.error("Unexpected error", e)
+  return error(500, "An error occurred. Please try again later.")
+}
+```
+
+Catch and handle expected exception types. Have a top-level handler for unexpected errors. Never let unhandled exceptions reach the user.
+
+### Avoid Revealing System Architecture in Errors
+
+```
+return "An error occurred"  // not "PostgreSQL connection refused"
+return "Resource not found"  // not "Table 'accounts' has no row with id=..."
+```
+
+Do not mention database types, table names, hostnames, ports, or internal service names in user-facing messages.
+
+### Use Custom Error Pages
+
+```
+error_pages = {
+  404: "errors/404.html",
+  500: "errors/500.html",
+  403: "errors/403.html"
+}
+```
+
+Define custom pages for common HTTP errors. Ensure they do not include dynamic content that could leak information.
+
+### Ensure Errors Do Not Leave System Insecure
+
+```
+begin_transaction()
+try {
+  update_balance(account, -amount)
+  send_money(recipient, amount)
+  commit()
+} catch (e) {
+  rollback()
+  log.error("Transfer failed", e)
+  return error(500, "Transfer failed. Please try again.")
+}
+```
+
+Use transactions for multi-step operations. Roll back on failure. Ensure partial updates do not persist when later steps fail.
+
+### Use Correlation IDs for Debugging
+
+```
+request_id = generate_uuid()
+log.info("Request started", { request_id, path })
+catch (e) {
+  log.error("Request failed", { request_id, error: e })
+  return error(500, "An error occurred. Reference: " + request_id)
+}
+```
+
+Include a non-sensitive correlation ID in the user-facing message so support can look up the detailed log entry. Do not include the ID in logs that might be exposed.
+
+### Fail Securely
+
+```
+if (auth_check_fails) {
+  deny_access()
+  return
+}
+```
+
+On authentication or authorization failure, deny access by default. Do not grant access when error handling paths are unclear.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A04:2021 – Insecure Design |
+| OWASP Top 10 2021 | A09:2021 – Security Logging and Monitoring Failures |
+| CWE | 209 – Generation of Error Message Containing Sensitive Information |
+| CWE | 200 – Exposure of Sensitive Information to an Unauthorized Actor |
+| CWE | 755 – Improper Handling of Exceptional Conditions |

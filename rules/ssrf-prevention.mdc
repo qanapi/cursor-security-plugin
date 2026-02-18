@@ -1,0 +1,172 @@
+---
+description: Prevents Server-Side Request Forgery by validating and allowlisting destination URLs and blocking internal/private IP ranges
+alwaysApply: true
+---
+
+# SSRF Prevention
+
+## Vulnerability Description
+
+Server-Side Request Forgery (SSRF) occurs when an application fetches a URL supplied by the user without validating the destination. Attackers provide URLs pointing to internal services (127.0.0.1, 10.x.x.x, 192.168.x.x), cloud metadata endpoints (169.254.169.254), or other sensitive resources. The server makes the request on behalf of the attacker, potentially exposing internal APIs, databases, or cloud credentials. SSRF can lead to data exfiltration, internal network reconnaissance, or remote code execution.
+
+## Anti-Patterns to Avoid
+
+### User-Controlled Full URL for Server-Side Requests
+
+```
+url = request.params.url
+response = fetch(url)
+```
+
+```
+url = request.body.webhook_url
+http.get(url)
+```
+
+### No Validation of URL Scheme
+
+```
+fetch(user_provided_url)
+```
+
+### Following Redirects Without Validating Target
+
+```
+response = fetch(url, { redirect: "follow" })
+```
+
+### Trusting Hostname Without Resolving
+
+```
+if (parsed.hostname == "example.com") {
+  fetch(url)
+}
+```
+
+### Blocking Only Specific Strings
+
+```
+if (url.contains("localhost") || url.contains("127.0.0.1")) {
+  reject()
+}
+fetch(url)
+```
+
+### Using URL for Internal Service Calls
+
+```
+internal_url = "http://" + user_input + ":8080/api"
+fetch(internal_url)
+```
+
+## Secure Patterns
+
+### Validate and Allowlist Destination URLs
+
+```
+allowed_hosts = ["api.example.com", "cdn.example.com"]
+parsed = parse_url(user_input)
+if (!allowed_hosts.includes(parsed.hostname)) {
+  reject()
+}
+if (parsed.scheme != "https") {
+  reject()
+}
+fetch(parsed.url)
+```
+
+Use an allowlist of permitted hostnames. Reject any URL whose host is not on the list. Prefer allowlisting over denylisting.
+
+### Block Requests to Internal and Private IP Ranges
+
+```
+blocked_ranges = [
+  "127.0.0.0/8",
+  "10.0.0.0/8",
+  "172.16.0.0/12",
+  "192.168.0.0/16",
+  "169.254.169.254",
+  "::1",
+  "fc00::/7"
+]
+resolved = resolve(parsed.hostname)
+for (range in blocked_ranges) {
+  if (ip_in_range(resolved, range)) {
+    reject()
+  }
+}
+```
+
+Resolve the hostname to an IP and check against blocked ranges. Block loopback (127.0.0.0/8, ::1), private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), link-local (169.254.0.0/16), and cloud metadata (169.254.169.254). Handle IPv6 equivalents.
+
+### Restrict URL Scheme to HTTP and HTTPS
+
+```
+parsed = parse_url(user_input)
+allowed_schemes = ["http", "https"]
+if (!allowed_schemes.includes(parsed.scheme)) {
+  reject()
+}
+```
+
+Reject file:, gopher:, dict:, and other schemes that can access local resources or non-HTTP protocols.
+
+### Avoid User-Controlled URLs When Possible
+
+```
+allowed_endpoints = {
+  "webhook_a": "https://api.example.com/webhook/a",
+  "webhook_b": "https://api.example.com/webhook/b"
+}
+endpoint_key = request.body.endpoint
+if (!allowed_endpoints.has(endpoint_key)) {
+  reject()
+}
+url = allowed_endpoints[endpoint_key]
+fetch(url)
+```
+
+Use an identifier or key to select from a predefined set of URLs. Never let users supply arbitrary URLs for server-side requests.
+
+### Disable Redirects or Validate Redirect Targets
+
+```
+response = fetch(url, { redirect: "manual" })
+if (response.status == 301 || response.status == 302) {
+  redirect_url = response.headers["Location"]
+  parsed = parse_url(redirect_url)
+  if (ip_in_blocked_range(resolve(parsed.hostname))) {
+    reject()
+  }
+}
+```
+
+Either disable automatic redirect following or validate each redirect target against the same IP allowlist before following.
+
+### Use Network-Level Segmentation
+
+```
+outbound_firewall.deny("10.0.0.0/8")
+outbound_firewall.deny("192.168.0.0/16")
+outbound_firewall.deny("169.254.169.254")
+```
+
+Apply firewall rules to prevent the application from reaching internal networks and metadata endpoints, even if validation is bypassed.
+
+### Use a Robust URL Parser
+
+```
+parsed = url_parse(user_input)
+if (parsed == null || parsed.hostname == null) {
+  reject()
+}
+```
+
+Use the language or framework URL parsing library. Handle edge cases such as @ in URLs (user:pass@host), encoded characters, and internationalized domain names. Validate the parsed structure before use.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A10:2021 – Server-Side Request Forgery (SSRF) |
+| CWE | 918 – Server-Side Request Forgery (SSRF) |

@@ -1,0 +1,134 @@
+---
+description: Prevents Reflected, Stored, and DOM-based Cross-Site Scripting (XSS)
+alwaysApply: true
+---
+
+# XSS Prevention
+
+## Vulnerability Description
+
+Cross-Site Scripting (XSS) allows attackers to inject malicious scripts into web pages viewed by other users. The browser executes the injected script in the victim's context, enabling session hijacking, credential theft, defacement, and malware delivery. Three variants exist: Reflected (payload in request, echoed in response), Stored (payload persisted and served to all viewers), and DOM-based (vulnerability entirely in client-side code).
+
+## Anti-Patterns to Avoid
+
+### HTML Body Context
+
+```
+element.innerHTML = user_input
+element.insertAdjacentHTML("beforeend", user_input)
+document.write(user_input)
+template = "<div>Hello " + user_input + "</div>"
+```
+
+### HTML Attribute Context
+
+```
+element.setAttribute("title", user_input)
+element.setAttribute("data-value", user_input)
+html = "<input value=\"" + user_input + "\">"
+html = "<a href=\"" + user_input + "\">link</a>"
+```
+
+### JavaScript Context
+
+```
+script = "var name = '" + user_input + "';"
+element.onclick = "doSomething('" + user_input + "')"
+element.setAttribute("onclick", "submit('" + user_input + "')")
+```
+
+### URL Context
+
+```
+link = "https://example.com/page?redirect=" + user_input
+link = "javascript:" + user_input
+```
+
+### CSS Context
+
+```
+element.style.cssText = user_input
+element.setAttribute("style", "color: " + user_input)
+```
+
+### Framework-Specific Dangerous APIs
+
+```
+dangerouslySetInnerHTML={{ __html: user_input }}
+v-html="user_input"
+[innerHTML]="user_input"
+```
+
+## Secure Patterns
+
+### Context-Aware Output Encoding
+
+Encode output according to the insertion context. Different contexts require different escape sequences:
+
+**HTML entity encoding (body, attributes):**
+- `&` → `&amp;`
+- `<` → `&lt;`
+- `>` → `&gt;`
+- `"` → `&quot;`
+- `'` → `&#x27;` or `&apos;`
+- `/` → `&#x2F;`
+
+**HTML attribute encoding:** Use the same as above. For attributes in quotes, escape the quote character used to delimit the attribute.
+
+**JavaScript string encoding:** Escape `\`, `'`, `"`, `<`, `>`, `&`, `=`, `-`, `+`, CR, LF, and Unicode control characters. Use `\xHH` or `\uHHHH` for special chars.
+
+**URL encoding:** Use percent-encoding for query parameters and path segments. Validate scheme (allow only `https:` or relative paths). Reject `javascript:` and `data:` in URLs that become links or redirects.
+
+**CSS encoding:** Escape `\`, `"`, `'`, `<`, `>`, `/`, and newlines. Use `\HH` for special characters.
+
+### Use Framework Auto-Escaping
+
+Prefer templating that escapes by default:
+
+```
+{{ user_input }}
+${escapeHtml(user_input)}
+```
+
+Only disable escaping when intentionally rendering trusted HTML, and ensure that content was sanitized.
+
+### Rich Text: Sanitize Before Render
+
+When users must supply HTML (e.g., WYSIWYG editors), use a whitelist-based HTML sanitizer:
+
+- Allow only specific tags (e.g., `b`, `i`, `u`, `a`, `p`, `br`)
+- Allow only specific attributes (e.g., `href` on `a`)
+- Validate attribute values (e.g., `href` must be `https:` or relative)
+- Strip all scripts, event handlers, and `javascript:` URLs
+
+Never rely on regex alone to sanitize HTML. Use a dedicated sanitization library with a well-tested allowlist.
+
+### Content-Security-Policy Header
+
+Mitigate impact of XSS by restricting script sources:
+
+```
+Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'
+```
+
+Use nonces or hashes for inline scripts when necessary. Avoid `unsafe-inline` and `unsafe-eval` in production.
+
+### Avoid Sinks That Execute Code
+
+Do not pass user-controlled data to:
+
+- `innerHTML`, `outerHTML`, `insertAdjacentHTML`
+- `document.write`, `document.writeln`
+- `eval`, `new Function`, `setTimeout(string)`, `setInterval(string)`
+- `location`, `location.href` when value is user-controlled
+- `element.setAttribute` for event handlers (`onclick`, `onerror`, etc.)
+
+### DOM-based XSS
+
+For DOM-based XSS, treat data from URL (e.g., `location.hash`, `document.URL`, `document.referrer`), `localStorage`, or `sessionStorage` as untrusted. Apply the same encoding rules before inserting into the DOM. Avoid `eval` or dynamic code execution with URL parameters.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| CWE | 79 (Cross-site Scripting) |

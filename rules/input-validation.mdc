@@ -1,0 +1,192 @@
+---
+description: Input validation to prevent improper validation, type confusion, and buffer overflows from malicious input
+alwaysApply: true
+---
+
+# Input Validation
+
+## Vulnerability Description
+
+Improper input validation occurs when applications fail to validate, reject, or constrain untrusted data before use. Attackers supply malformed, oversized, or unexpected input that causes type confusion, buffer overflows, injection, or logic flaws. Client-side validation alone is insufficient because attackers can bypass it. Validation must occur on the server before any processing, storage, or output.
+
+## Anti-Patterns to Avoid
+
+### Trusting Client-Side Validation Only
+
+```
+if (client_validates(input)) {
+  process(input)
+}
+```
+
+### Relying on Denylists
+
+```
+if (input.contains("<script>") || input.contains("javascript:")) {
+  reject()
+}
+process(input)
+```
+
+### No Type Validation
+
+```
+amount = request.body.amount
+balance = balance - amount
+```
+
+### No Length or Range Checks
+
+```
+name = request.body.name
+db.insert({ name: name })
+```
+
+### Sanitizing Instead of Rejecting
+
+```
+sanitized = input.replace("<script>", "")
+sanitized = input.replace(/[<>]/g, "")
+output(sanitized)
+```
+
+### Validating Before Canonicalization
+
+```
+if (input.matches(allowed_pattern)) {
+  process(input)
+}
+```
+
+### Accepting Structured Data Without Schema Validation
+
+```
+data = JSON.parse(request.body)
+db.insert(data)
+```
+
+### Concatenating Unvalidated Input into Buffers
+
+```
+buffer = allocate(size)
+copy(buffer, user_input)
+```
+
+## Secure Patterns
+
+### Validate on the Server Side
+
+```
+validated = validate_on_server(request.body)
+if (!validated.valid) {
+  return error(400, validated.errors)
+}
+process(validated.data)
+```
+
+Never trust client validation. All validation must be performed server-side before any business logic executes.
+
+### Use Allowlists Over Denylists
+
+```
+allowed_chars = /^[a-zA-Z0-9_-]+$/
+if (!allowed_chars.test(input)) {
+  reject()
+}
+
+allowed_extensions = ["pdf", "doc", "docx"]
+ext = get_extension(filename)
+if (!allowed_extensions.includes(ext)) {
+  reject()
+}
+```
+
+Define what is permitted rather than what is forbidden. Denylists are easily bypassed with encoding, obfuscation, or novel payloads.
+
+### Validate Type, Length, Range, and Format
+
+```
+if (typeof amount !== "number" || isNaN(amount)) {
+  reject()
+}
+if (amount < 0 || amount > MAX_AMOUNT) {
+  reject()
+}
+
+if (username.length < 3 || username.length > 32) {
+  reject()
+}
+
+if (!email_pattern.test(email)) {
+  reject()
+}
+```
+
+Enforce expected types. Reject values outside allowed ranges. Enforce minimum and maximum lengths. Validate format with strict patterns (email, UUID, date, etc.).
+
+### Canonicalize Before Validation
+
+```
+canonical = decode_uri_component(input)
+canonical = normalize_unicode(canonical)
+canonical = resolve_path(canonical)
+if (!allowed_pattern.test(canonical)) {
+  reject()
+}
+```
+
+Decode percent-encoding, normalize Unicode, resolve path traversal. Validate the canonical form so attackers cannot bypass checks with encoding tricks.
+
+### Reject Invalid Input
+
+```
+if (!is_valid(input)) {
+  return error(400, "Invalid input")
+}
+process(input)
+```
+
+Do not attempt to sanitize or fix invalid input. Reject it and return a clear error. Sanitization often fails against novel attacks.
+
+### Use Schema Validation for Structured Data
+
+```
+schema = {
+  type: "object",
+  required: ["email", "name"],
+  properties: {
+    email: { type: "string", format: "email", maxLength: 254 },
+    name: { type: "string", minLength: 1, maxLength: 100 },
+    age: { type: "integer", minimum: 0, maximum: 150 }
+  },
+  additionalProperties: false
+}
+result = validate(schema, request.body)
+if (!result.valid) {
+  return error(400, result.errors)
+}
+```
+
+Use JSON Schema, XML Schema, or equivalent for JSON, XML, and other structured payloads. Reject unknown properties. Enforce types and constraints declaratively.
+
+### Bounds-Check Before Buffer Operations
+
+```
+max_size = 1024
+if (user_input.length > max_size) {
+  reject()
+}
+buffer = allocate(user_input.length)
+copy(buffer, user_input)
+```
+
+Validate length before allocation and copy. Never trust user-supplied sizes for buffer allocation.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A03:2021 – Injection |
+| OWASP Top 10 2021 | A04:2021 – Insecure Design |
+| CWE | 20 – Improper Input Validation |
+| CWE | 129 – Improper Validation of Array Index |

@@ -1,0 +1,164 @@
+---
+description: Prevents insecure deserialization, object injection, and RCE via deserialization
+alwaysApply: true
+---
+
+# Deserialization Safety
+
+## Vulnerability Description
+
+Insecure deserialization occurs when an application deserializes data from an untrusted source without validation or integrity checks. Native serialization formats (pickle, Java ObjectInputStream, PHP unserialize, .NET BinaryFormatter) reconstruct object graphs and can invoke constructors, destructors, getters, and magic methods. Attackers craft malicious payloads that execute arbitrary code during deserialization, leading to remote code execution (RCE), privilege escalation, or denial of service. Object injection allows attackers to instantiate dangerous classes or trigger unintended behavior through crafted type confusion.
+
+## Anti-Patterns to Avoid
+
+### Deserializing Untrusted Data with Native Serialization
+
+```
+data = receive_from_network()
+obj = pickle.loads(data)
+
+stream = new ObjectInputStream(socket.getInputStream())
+obj = stream.readObject()
+
+obj = unserialize($_POST['data'])
+
+formatter.Deserialize(stream)
+```
+
+### No Integrity Verification on Serialized Payloads
+
+```
+payload = request.body
+obj = deserialize(payload)
+process(obj)
+```
+
+### Deserializing User-Controlled Input
+
+```
+session_data = base64_decode(cookie_value)
+user = deserialize(session_data)
+```
+
+### Trusting Serialized Data from External Systems
+
+```
+message = queue.receive()
+task = deserialize(message.body)
+task.execute()
+```
+
+### Using Generic Deserialization Without Class Restriction
+
+```
+obj = yaml.load(user_input)
+obj = jsonpickle.decode(user_input)
+```
+
+### Ignoring Deserialization Exceptions
+
+```
+try {
+  obj = deserialize(data)
+} catch (e) {
+  return default_object
+}
+```
+
+## Secure Patterns
+
+### Use Safe Data Formats Instead of Native Serialization
+
+```
+data = json.loads(payload)
+data = json_decode(payload)
+
+parsed = parse_json(payload)
+validate_schema(parsed, expected_schema)
+```
+
+Prefer JSON, XML (with external entities disabled), Protocol Buffers, or MessagePack with schema validation. These formats represent data only and do not reconstruct executable objects.
+
+### Validate and Schema-Check Before Deserializing
+
+```
+schema = {
+  "type": "object",
+  "properties": {
+    "user_id": { "type": "string", "pattern": "^[a-f0-9-]+$" },
+    "role": { "enum": ["viewer", "editor"] }
+  },
+  "required": ["user_id"]
+}
+parsed = json.loads(payload)
+validate(parsed, schema)
+```
+
+Apply strict schema validation to parsed data. Reject malformed or unexpected structures before use.
+
+### Implement Integrity Checks on Serialized Data
+
+```
+signature = hmac.new(secret_key, payload, sha256).digest()
+stored = base64(payload) + "." + base64(signature)
+
+received_payload, received_sig = split(stored)
+expected_sig = hmac.new(secret_key, received_payload, sha256).digest()
+if not constant_time_compare(expected_sig, received_sig):
+  reject()
+obj = safe_deserialize(received_payload)
+```
+
+Sign or MAC serialized data with a secret key. Verify the signature before deserializing. Use constant-time comparison for signature checks.
+
+### Use Allowlists for Permitted Classes
+
+```
+allowed_classes = {"User", "Session", "Config"}
+def safe_deserialize(data):
+  for cls in extract_referenced_classes(data):
+    if cls not in allowed_classes:
+      raise SecurityError("Disallowed class: " + cls)
+  return deserialize(data)
+```
+
+When native deserialization is unavoidable, restrict which classes can be instantiated. Reject or sanitize references to disallowed classes.
+
+### Monitor Deserialization Errors
+
+```
+try:
+  obj = deserialize(data)
+except DeserializationError as e:
+  log_security_event("deserialization_failure", payload_hash=hash(data), error=str(e))
+  alert_if_threshold_exceeded("deserialization_failures")
+  raise
+```
+
+Log deserialization failures with sufficient context (payload hash, source) for forensics. Set up alerting for anomalous failure rates that may indicate attack attempts.
+
+### Prefer Data-Only Serialization with Explicit Mapping
+
+```
+class UserDTO:
+  user_id: str
+  role: str
+
+def from_dict(d: dict) -> UserDTO:
+  return UserDTO(
+    user_id=d["user_id"],
+    role=d["role"]
+  )
+
+dto = from_dict(json.loads(payload))
+```
+
+Map parsed data into plain data transfer objects. Avoid automatic binding that could invoke unexpected methods.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A08:2021 – Software and Data Integrity Failures |
+| CWE | 502 – Deserialization of Untrusted Data |
+| CWE | 915 – Improperly Controlled Modification of Dynamically-Determined Object Attributes |

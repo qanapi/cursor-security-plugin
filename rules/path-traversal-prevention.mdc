@@ -1,0 +1,188 @@
+---
+description: Prevents directory traversal and file inclusion by canonicalizing paths and verifying they remain within allowed base directories
+alwaysApply: true
+---
+
+# Path Traversal Prevention
+
+## Vulnerability Description
+
+Path traversal (directory traversal) occurs when an application uses user-controlled input to construct file system paths without proper validation. Attackers inject sequences such as `..` or `../` to escape the intended directory and access arbitrary files (e.g., `/etc/passwd`, application source code, or configuration). Null bytes, encoded characters, or symlinks can bypass naive checks. This leads to unauthorized file read, write, or inclusion, potentially exposing secrets or enabling remote code execution.
+
+## Anti-Patterns to Avoid
+
+### Concatenating User Input Directly into Paths
+
+```
+path = base_dir + "/" + user_filename
+content = read_file(path)
+```
+
+```
+path = "/var/data/" + request.params.file
+return file(path)
+```
+
+### Checking Only for ".." String
+
+```
+if (path.contains("..")) {
+  reject()
+}
+read_file(path)
+```
+
+### Trusting User Input After Minimal Sanitization
+
+```
+sanitized = user_input.replace("../", "")
+path = base_dir + "/" + sanitized
+read_file(path)
+```
+
+### Using User Input for Base Path
+
+```
+base = request.params.base
+path = base + "/" + filename
+read_file(path)
+```
+
+### Not Resolving Symlinks
+
+```
+path = join(base_dir, user_input)
+read_file(path)
+```
+
+### Relying on Extension Checks Alone
+
+```
+if (path.ends_with(".txt")) {
+  read_file(path)
+}
+```
+
+### Including Files with User-Controlled Path
+
+```
+include(base_dir + "/" + user_module + ".php")
+require(user_path)
+```
+
+## Secure Patterns
+
+### Canonicalize Then Verify Within Base Directory
+
+```
+base = resolve("/var/app/uploads")
+requested = resolve(join(base, user_input))
+if (!requested.starts_with(base + separator)) {
+  reject()
+}
+content = read_file(requested)
+```
+
+Resolve both base and requested path to absolute, canonical form. Ensure the requested path is strictly under the base directory. Use the platform path separator and handle trailing slashes correctly.
+
+### Reject Paths Containing ".." or Null Bytes
+
+```
+if (user_input.contains("..") || user_input.contains("\0")) {
+  reject()
+}
+```
+
+Reject input containing `..` or null bytes before path construction. These are common traversal payloads; rejecting them early adds defense in depth.
+
+### Use Framework Path-Joining Utilities
+
+```
+path = join(base_dir, user_input)
+resolved = realpath(path)
+if (resolved == null || !resolved.starts_with(realpath(base_dir))) {
+  reject()
+}
+```
+
+Use `join`, `path.resolve`, or equivalent to construct paths. Prefer `realpath` or `resolve` to normalize and resolve symlinks. Verify the result is within the allowed base.
+
+### Never Concatenate User Input into Paths Directly
+
+```
+allowed_files = ["config.json", "schema.json"]
+if (!allowed_files.includes(user_input)) {
+  reject()
+}
+path = join(base_dir, user_input)
+```
+
+Use an allowlist of permitted filenames or identifiers. Map user input to a known safe path. Never concatenate unsanitized user input into a path.
+
+### Maintain an Allowlist of Accessible Directories
+
+```
+allowed_bases = ["/var/app/uploads", "/var/app/templates"]
+base = allowed_bases[validated_index]
+path = join(base, validated_filename)
+resolved = resolve(path)
+if (!resolved.starts_with(resolve(base))) {
+  reject()
+}
+```
+
+Define explicit base directories. Validate that the resolved path remains under one of them. Reject any path that escapes.
+
+### Use chroot or Jail When Possible
+
+```
+chroot("/var/app/sandbox")
+path = join("/", user_input)
+resolved = resolve(path)
+read_file(resolved)
+```
+
+Run the process in a chroot or similar jail so the filesystem root is restricted. Reduces impact if path validation is bypassed.
+
+### Handle Encoded and Alternate Encodings
+
+```
+decoded = decode_uri_component(user_input)
+decoded = normalize_unicode(decoded)
+if (decoded.contains("..") || decoded.contains("\0")) {
+  reject()
+}
+path = join(base_dir, decoded)
+resolved = resolve(path)
+if (!resolved.starts_with(resolve(base_dir))) {
+  reject()
+}
+```
+
+Decode percent-encoding and normalize Unicode before validation. Attackers may use `%2e%2e%2f`, `..%2f`, or Unicode lookalikes to bypass checks.
+
+### Validate Filename Separately from Path
+
+```
+parts = user_input.split(separator)
+for (part in parts) {
+  if (part == ".." || part == "." || part == "" || part.contains("\0")) {
+    reject()
+  }
+}
+path = join(base_dir, user_input)
+resolved = resolve(path)
+if (!resolved.starts_with(resolve(base_dir))) {
+  reject()
+}
+```
+
+Reject path segments that are `..`, `.`, empty, or contain null bytes. Combine with canonicalization and base-directory verification.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| CWE | 22 – Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal') |
+| CWE | 23 – Relative Path Traversal |
+| CWE | 36 – Absolute Path Traversal |

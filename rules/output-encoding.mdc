@@ -1,0 +1,149 @@
+---
+description: Output encoding and escaping to prevent injection via improper encoding context
+alwaysApply: true
+---
+
+# Output Encoding
+
+## Vulnerability Description
+
+Improper output encoding occurs when untrusted data is inserted into a structured output context (HTML, JavaScript, CSS, URL) without being escaped for that context. The data is interpreted as code rather than literal text, enabling cross-site scripting (XSS), injection, and other attacks. Encoding must match the exact context where data is rendered; using the wrong encoder or encoding too early can leave vulnerabilities.
+
+## Anti-Patterns to Avoid
+
+### No Encoding
+
+```
+html = "<div>Hello " + user_name + "</div>"
+html = "<a href='" + user_url + "'>Link</a>"
+```
+
+### Encoding for Wrong Context
+
+```
+encoded = html_escape(user_input)
+script = "var data = '" + encoded + "';"
+```
+
+### Encoding Too Early
+
+```
+safe_name = html_escape(user_name)
+safe_name = safe_name.replace("'", "\\'")
+html = "<div>" + safe_name + "</div>"
+script = "var name = '" + safe_name + "';"
+```
+
+### Double-Encoding or Mixed Encoding
+
+```
+encoded = html_escape(user_input)
+encoded = url_encode(encoded)
+link = "<a href='?q=" + encoded + "'>"
+```
+
+### Using Manual String Replacement for Encoding
+
+```
+safe = input.replace("<", "&lt;").replace(">", "&gt;")
+```
+
+### Incorrect Content-Type Headers
+
+```
+Content-Type: text/html
+body = json_string
+```
+
+### Inserting Unescaped Data into JavaScript
+
+```
+script = "var config = { user: '" + username + "' };"
+script = "location.href = '" + redirect_url + "';"
+```
+
+### Inserting Unescaped Data into CSS
+
+```
+style = "background: url('" + user_image + "');"
+style = "color: " + user_color + ";"
+```
+
+## Secure Patterns
+
+### Encode Based on Output Context
+
+```
+html_body = encode_for_html_body(user_input)
+html_attr = encode_for_html_attribute(user_input)
+js_string = encode_for_javascript_string(user_input)
+url_param = encode_for_url_component(user_input)
+css_value = encode_for_css_string(user_input)
+```
+
+HTML body: escape `&`, `<`, `>`, `"`, `'`, `/`. HTML attributes: same plus handle attribute quotes. JavaScript strings: escape `\`, `'`, `"`, newlines, control chars. URL: percent-encode reserved and unsafe chars. CSS: escape `\`, `'`, `"`, `(`, `)`, and other special chars.
+
+### Use Framework-Provided Encoding Functions
+
+```
+html_body(user_input)
+escape_html_attribute(user_input)
+escape_js_string(user_input)
+encode_uri_component(user_input)
+```
+
+Prefer built-in or well-tested library functions over custom implementations. Ensure the function matches the target context.
+
+### Encode at the Rendering Boundary
+
+```
+template = load_template("user_profile")
+output = template.render({ name: encode_for_html_body(user.name) })
+```
+
+Encode data at the point where it is inserted into the output, not when it is first received. This preserves data integrity for storage and other uses.
+
+### Never Mix Encoding Contexts
+
+```
+html = "<a href='" + encode_for_html_attribute(url) + "'>"
+html += encode_for_html_body(label) + "</a>"
+```
+
+Each insertion point has one context. Do not apply HTML encoding to data that will be used in a JavaScript block; apply JavaScript encoding there instead.
+
+### Use Content-Type Headers Correctly
+
+```
+Content-Type: application/json; charset=utf-8
+Content-Type: text/html; charset=utf-8
+X-Content-Type-Options: nosniff
+```
+
+Set the correct Content-Type for the response. Use charset explicitly. Add X-Content-Type-Options: nosniff to prevent MIME sniffing.
+
+### Encode Each Layer When Nesting Contexts
+
+```
+html = "<div onclick=\"alert('" + encode_for_js_string(encode_for_html_attribute(value)) + "')\">"
+```
+
+When data flows through nested contexts (e.g., HTML attribute containing JavaScript), apply encoding for each layer in reverse order of interpretation.
+
+### Prefer Structured Output Over Manual Concatenation
+
+```
+template.render({ user: user })
+dom_set_text(element, user_input)
+dom_set_attribute(element, "href", user_url)
+```
+
+Use templating engines that auto-escape by default. Use DOM APIs that treat data as text rather than HTML. Avoid building HTML strings manually when possible.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A03:2021 – Injection |
+| CWE | 116 – Improper Encoding or Escaping of Output |
+| CWE | 838 – Inappropriate Encoding for Output Context |

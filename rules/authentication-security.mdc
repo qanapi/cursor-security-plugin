@@ -1,0 +1,164 @@
+---
+description: Authentication security for password storage, session management, MFA, brute-force protection, and credential stuffing
+alwaysApply: true
+---
+
+# Authentication Security
+
+## Vulnerability Description
+
+Authentication failures occur when systems store credentials weakly, manage sessions insecurely, lack multi-factor authentication, or fail to protect against brute-force and credential stuffing attacks. Attackers exploit weak password hashing to recover plaintext passwords from breaches, hijack sessions via predictable or stolen identifiers, bypass single-factor auth, and automate credential testing against login endpoints.
+
+## Anti-Patterns to Avoid
+
+### Weak Password Hashing
+
+```
+hash = md5(password)
+hash = sha1(password)
+hash = sha256(password)
+hash = bcrypt(password, rounds=4)
+stored = base64_encode(password)
+```
+
+### Insecure Session Management
+
+```
+session_id = user_id
+session_id = md5(username + timestamp)
+session_id = random_int(100000, 999999)
+session_cookie = "session=" + session_id + "; Path=/"
+```
+
+### Missing Session Security
+
+```
+Set-Cookie: session=abc123; Path=/
+Set-Cookie: session=abc123; HttpOnly
+Set-Cookie: session=abc123; Secure; HttpOnly
+```
+
+### No Brute-Force Protection
+
+```
+if (verify_password(username, password)) {
+  return success
+}
+return failure
+```
+
+### Credential Stuffing Vulnerabilities
+
+```
+if (user_exists(username) && verify_password(username, password)) {
+  return success
+}
+return "Invalid username or password"
+```
+
+### Session Fixation
+
+```
+session_id = request.get_cookie("session")
+if (!session_id) {
+  session_id = generate_session_id()
+}
+session.create(session_id)
+```
+
+## Secure Patterns
+
+### Password Hashing: bcrypt, scrypt, or Argon2
+
+```
+hash = bcrypt.hash(password, cost=12)
+hash = scrypt.hash(password, N=2^17, r=8, p=1)
+hash = argon2id.hash(password, time_cost=3, memory_cost=65536)
+```
+
+Use a cost factor that yields 200–500ms per hash. Never use MD5, SHA1, SHA256, or SHA512 alone for passwords. Salt is mandatory; modern libraries handle salting automatically.
+
+### Strong Password Policy
+
+```
+min_length = 12
+require_uppercase = true
+require_lowercase = true
+require_digit = true
+require_special = true
+reject_common_passwords = true
+reject_user_attributes_in_password = true
+```
+
+Enforce minimum length, character diversity, and check against known breached password lists. Reject passwords containing username, email, or other account attributes.
+
+### Cryptographically Random Session IDs
+
+```
+session_id = secure_random_bytes(32)
+session_id = crypto.randomBytes(32).toString("hex")
+session_id = secrets.token_urlsafe(32)
+```
+
+Use CSPRNG (Cryptographically Secure Pseudo-Random Number Generator). Minimum 128 bits of entropy. Never derive session IDs from user data or weak RNGs.
+
+### Secure Session Cookies
+
+```
+Set-Cookie: session=abc123; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=3600
+```
+
+Set HttpOnly to prevent JavaScript access. Set Secure for HTTPS-only transmission. Use SameSite=Strict or Lax to mitigate CSRF. Set explicit Max-Age or Expires.
+
+### Session Expiry and Regeneration
+
+```
+session.max_age = 3600
+session.absolute_timeout = 86400
+session.idle_timeout = 900
+regenerate_session_id_after_login()
+regenerate_session_id_after_privilege_change()
+```
+
+Implement both absolute and idle timeouts. Regenerate session ID on login, logout, and privilege escalation. Invalidate old session when regenerating.
+
+### Account Lockout and Rate Limiting
+
+```
+max_attempts = 5
+lockout_duration = 900
+rate_limit_login = "5 per minute per IP"
+rate_limit_login = "10 per minute per username"
+```
+
+Lock account after N failed attempts. Use exponential backoff or fixed lockout. Apply rate limiting per IP and per username. Return generic error messages to avoid user enumeration.
+
+### Multi-Factor Authentication
+
+```
+require_mfa_for_sensitive_operations()
+support_totp = true
+support_webauthn = true
+backup_codes = generate_secure_backup_codes()
+```
+
+Support TOTP (RFC 6238) and WebAuthn/FIDO2. Provide backup codes for account recovery. Require MFA for high-risk actions (password change, 2FA disable, sensitive data access).
+
+### Credential Stuffing Mitigation
+
+```
+return "Invalid username or password"
+```
+
+Use identical error messages for invalid username and invalid password. Implement CAPTCHA or proof-of-work after N failures. Consider device fingerprinting and anomaly detection. Encourage or require MFA.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A07:2021 – Identification and Authentication Failures |
+| CWE | 287 – Improper Authentication |
+| CWE | 306 – Missing Authentication for Critical Function |
+| CWE | 307 – Improper Restriction of Excessive Authentication Attempts |
+| CWE | 384 – Session Fixation |
+| CWE | 521 – Weak Password Requirements |

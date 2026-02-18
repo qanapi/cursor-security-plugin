@@ -1,0 +1,191 @@
+---
+description: Cryptographic practices for algorithms, key management, entropy, and secure implementation
+alwaysApply: true
+---
+
+# Cryptographic Practices
+
+## Vulnerability Description
+
+Cryptographic failures arise from weak algorithms, poor key management, insufficient entropy, or incorrect implementation. Attackers exploit deprecated ciphers (DES, RC4, MD5) to recover plaintext, extract keys from insecure storage, predict values from weak random sources, and bypass integrity checks. Custom or non-standard crypto is frequently vulnerable; use well-vetted libraries and standard algorithms.
+
+## Anti-Patterns to Avoid
+
+### Weak Symmetric Algorithms
+
+```
+cipher = "DES"
+cipher = "3DES"
+cipher = "RC4"
+cipher = "Blowfish"
+cipher = "AES-128-ECB"
+```
+
+### Weak Asymmetric Algorithms
+
+```
+key_size = 1024
+algorithm = "RSA"
+key_size = 160
+algorithm = "DSA"
+```
+
+### Weak Hashing for Integrity or Security
+
+```
+hash = md5(data)
+hash = sha1(data)
+digest = md5(file)
+digest = sha1(file)
+```
+
+### Insufficient Entropy
+
+```
+random_value = rand()
+random_value = random.randint(0, 1000000)
+random_value = Math.random()
+seed = time.now()
+random_value = uuid_from_timestamp()
+```
+
+### Custom or Rolled Crypto
+
+```
+def my_encrypt(plaintext, key):
+    return xor(plaintext, key)
+
+def my_hash(data):
+    return custom_compression(data) + checksum(data)
+```
+
+### Unauthenticated Encryption
+
+```
+ciphertext = aes_encrypt(plaintext, key)
+return ciphertext
+```
+
+### Keys in Code or Config
+
+```
+API_KEY = "sk_live_abc123xyz"
+secret = "my_secret_key_here"
+key = config.get("encryption_key")
+```
+
+### No Key Rotation
+
+```
+key = load_key("primary.key")
+encrypt(data, key)
+```
+
+## Secure Patterns
+
+### Symmetric Encryption: AES-256-GCM or ChaCha20-Poly1305
+
+```
+cipher = "AES-256-GCM"
+cipher = "ChaCha20-Poly1305"
+iv = secure_random_bytes(12)
+ciphertext = aes_gcm_encrypt(plaintext, key, iv)
+auth_tag = get_auth_tag()
+output = iv + ciphertext + auth_tag
+```
+
+Use authenticated encryption (AEAD). AES-256-GCM or ChaCha20-Poly1305. Generate a unique IV/nonce per encryption; never reuse. Include authentication tag with ciphertext.
+
+### Asymmetric Encryption: RSA-2048+ or ECDSA
+
+```
+key_size = 2048
+algorithm = "RSA"
+curve = "P-256"
+algorithm = "ECDSA"
+curve = "X25519"
+algorithm = "X25519"
+```
+
+Use RSA with minimum 2048 bits or ECDSA with P-256 or stronger. Prefer elliptic curve for new implementations (smaller keys, better performance).
+
+### Hashing: SHA-256 or SHA-3
+
+```
+hash = sha256(data)
+hash = sha384(data)
+hash = sha3_256(data)
+```
+
+Use SHA-256 or stronger for integrity and non-password hashing. SHA-384 or SHA-512 for higher security. Never use MD5 or SHA1 for security purposes.
+
+### Cryptographically Secure Random
+
+```
+random_bytes = secure_random_bytes(32)
+random_int = secure_random_int(0, max)
+random_bytes = crypto.randomBytes(32)
+random_bytes = secrets.token_bytes(32)
+random_hex = secrets.token_hex(32)
+```
+
+Use CSPRNG from the platform or library (e.g., /dev/urandom, CryptGenRandom, crypto.randomBytes). Never use rand(), random(), or time-based seeds for security-sensitive values.
+
+### Never Roll Custom Crypto
+
+```
+ciphertext = library.aes_gcm_encrypt(plaintext, key)
+signature = library.ed25519_sign(message, private_key)
+```
+
+Use standard libraries (OpenSSL, libsodium, platform crypto APIs). Rely on peer-reviewed implementations. Avoid implementing algorithms from scratch.
+
+### Key Rotation
+
+```
+primary_key = load_key("primary")
+legacy_keys = load_keys("legacy")
+plaintext = decrypt(ciphertext, primary_key) or decrypt_with_legacy(ciphertext, legacy_keys)
+new_ciphertext = encrypt(plaintext, primary_key)
+```
+
+Support multiple keys for decryption during rotation. Encrypt new data with current key only. Define rotation schedule and automate where possible.
+
+### Authenticated Encryption
+
+```
+output = aes_gcm_encrypt(plaintext, key, iv)
+verify_auth_tag(ciphertext, key, iv, auth_tag)
+plaintext = aes_gcm_decrypt(ciphertext, key, iv)
+```
+
+Always use AEAD (GCM, CCM, ChaCha20-Poly1305). Verify authentication tag before using plaintext. Reject tampered ciphertext.
+
+### Secure Key Storage
+
+```
+key = vault.get_secret("encryption/primary")
+key = kms.decrypt(encrypted_key)
+```
+
+Store keys in dedicated secret managers or HSMs. Never commit keys to source control. Use environment variables only for non-sensitive config; prefer vault integration for keys. Encrypt keys at rest and in transit.
+
+### Key Derivation
+
+```
+derived_key = pbkdf2(password, salt, iterations=600000)
+derived_key = scrypt(password, salt, N=2^17)
+derived_key = argon2id(password, salt, time_cost=3, memory_cost=65536)
+```
+
+Use PBKDF2, scrypt, or Argon2 for key derivation. Use unique salt per derivation. Use high iteration count or memory cost.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A02:2021 – Cryptographic Failures |
+| CWE | 327 – Use of a Broken or Risky Cryptographic Algorithm |
+| CWE | 328 – Use of Weak Hash |
+| CWE | 330 – Use of Insufficiently Random Values |
+| CWE | 326 – Inadequate Encryption Strength |

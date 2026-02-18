@@ -1,0 +1,185 @@
+---
+description: Mitigates known vulnerabilities in third-party dependencies and supply chain attacks
+alwaysApply: true
+---
+
+# Dependency Security
+
+## Vulnerability Description
+
+Applications rely on third-party libraries and frameworks that may contain known vulnerabilities. Attackers exploit outdated or vulnerable dependencies to achieve remote code execution, data exfiltration, or privilege escalation. Supply chain attacks involve compromising packages at the source (registry, build pipeline, or maintainer account) to inject malicious code into legitimate dependencies. Transitive dependencies multiply risk: a single vulnerable sub-dependency can affect many projects. Unmaintained or abandoned packages receive no security patches.
+
+## Anti-Patterns to Avoid
+
+### Unpinned or Floating Dependency Versions
+
+```
+dependencies:
+  lodash: "^4.17.0"
+  express: ">=4.0.0"
+  some-lib: "*"
+```
+
+### Ignoring Lockfiles
+
+```
+gitignore:
+  package-lock.json
+  Pipfile.lock
+  poetry.lock
+  yarn.lock
+```
+
+### Skipping Dependency Audits
+
+```
+install --no-audit
+pip install --no-deps
+```
+
+### Using Abandoned or Unmaintained Packages
+
+```
+last_updated: 5 years ago
+open_issues: 200+
+maintainers: 0
+```
+
+### Trusting Packages Without Integrity Verification
+
+```
+curl https://untrusted-registry.com/pkg.tgz | tar xz
+pip install from_unofficial_mirror
+```
+
+### Excessive or Unnecessary Dependencies
+
+```
+dependencies: 500+ packages
+import "left-pad"
+import "is-odd" (single-line utility)
+```
+
+### Not Reviewing Transitive Dependencies
+
+```
+direct_deps: 10
+total_installed: 847
+```
+
+### Using Packages from Unverified Sources
+
+```
+registry: http://internal-mirror.example.com
+no_signature_verification: true
+```
+
+## Secure Patterns
+
+### Pin Dependency Versions and Use Lockfiles
+
+```
+dependencies:
+  lodash: "4.17.21"
+
+package-lock.json: committed
+Pipfile.lock: committed
+Cargo.lock: committed
+```
+
+Pin exact versions in manifest files. Commit lockfiles to ensure reproducible builds. Regenerate lockfiles only through controlled update processes.
+
+### Audit Dependencies Regularly
+
+```
+npm audit
+npm audit fix
+
+pip-audit
+pip-audit -r requirements.txt
+
+cargo audit
+bundle audit
+go list -m -u all
+```
+
+Run audit tools in CI. Fail builds when high or critical vulnerabilities are found. Schedule regular audits (weekly or per-release).
+
+### Avoid Abandoned or Unmaintained Packages
+
+```
+check: last_release_date, issue_response_time, maintainer_count
+prefer: packages with active maintenance, security policy, CVE response history
+```
+
+Evaluate packages before adoption. Prefer alternatives with active maintenance when a package shows signs of abandonment.
+
+### Verify Package Integrity
+
+```
+integrity: sha512-...
+checksum: sha256:...
+
+verify_signatures: true
+```
+
+Use checksums or signatures from the official registry. Verify before install. Reject packages with mismatched or missing integrity data.
+
+### Minimize Dependency Count
+
+```
+prefer: standard library, minimal well-known libraries
+avoid: micro-packages for trivial logic, unnecessary abstractions
+```
+
+Reduce attack surface by depending only on necessary packages. Prefer standard library or widely-audited libraries over niche packages.
+
+### Monitor CVE Databases and Security Advisories
+
+```
+subscribe: package security advisories, CVE feeds
+automate: CVE scanning in CI, alert on new CVEs for used packages
+```
+
+Track CVEs for direct and transitive dependencies. Integrate CVE feeds into monitoring. Respond to new advisories promptly.
+
+### Use Private Registries When Possible
+
+```
+registry: internal-npm.company.com
+mirror: only approved packages
+proxy: cache with integrity verification
+```
+
+Use private registries for internal packages and approved mirrors. Restrict which public packages can be pulled. Enforce integrity verification at the registry layer.
+
+### Review Transitive Dependencies
+
+```
+npm ls
+pip show --tree
+cargo tree
+
+audit_transitive: true
+```
+
+Understand the full dependency tree. Include transitive dependencies in audits. Consider tools that flatten or minimize transitive depth.
+
+### Implement Dependency Update Policy
+
+```
+schedule: monthly dependency updates
+process: create PR, run tests, security scan, manual review
+automate: Dependabot, Renovate, or similar
+```
+
+Establish a process for applying security updates. Automate update PRs. Require tests and security checks before merging.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A06:2021 – Vulnerable and Outdated Components |
+| CWE | 1104 – Use of Unmaintained Third Party Components |
+| CWE | 1395 – Dependency on Vulnerable Third-Party Component |
+| CWE | 1357 – Reliance on Insufficiently Trustworthy Component |

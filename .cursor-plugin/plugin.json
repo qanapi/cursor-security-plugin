@@ -1,0 +1,21 @@
+{
+  "name": "qanapi-security",
+  "version": "1.0.0",
+  "description": "Security review and compliance enforcement plugin by Qanapi. Covers OWASP Top 10, SANS/CWE Top 25, and secure coding best practices.",
+  "author": {
+    "name": "Brent Arcane",
+    "email": "barcane@qanapi.com"
+  },
+  "homepage": "https://qanapi.com",
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "owasp",
+    "cwe",
+    "compliance",
+    "code-review",
+    "vulnerability",
+    "appsec"
+  ],
+  "logo": "assets/logo.svg"
+}

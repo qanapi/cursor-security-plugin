@@ -1,0 +1,143 @@
+---
+description: Prevents SQL, NoSQL, OS command, LDAP, and code injection vulnerabilities
+alwaysApply: true
+---
+
+# Injection Prevention
+
+## Vulnerability Description
+
+Injection occurs when untrusted data is interpreted as part of a command, query, or code structure. An attacker crafts malicious input that breaks out of the intended data context and executes unintended logic. This affects databases (SQL, NoSQL), operating system shells, LDAP directories, and runtime interpreters (eval, exec).
+
+## Anti-Patterns to Avoid
+
+### SQL Injection
+
+```
+query = "SELECT * FROM users WHERE id = " + user_input
+query = "SELECT * FROM users WHERE name = '" + user_input + "'"
+query = f"DELETE FROM orders WHERE user_id = {user_id}"
+query = "UPDATE accounts SET balance = balance - " + amount + " WHERE id = " + id
+```
+
+### NoSQL Injection
+
+```
+db.users.find({ username: user_input })
+db.users.findOne({ $where: "this.password == '" + user_input + "'" })
+db.collection.aggregate([{ $match: { field: req.body.filter } }])
+```
+
+### OS Command Injection
+
+```
+system("ls " + user_path)
+exec("ping -c 4 " + hostname)
+Process.run("cat " + filename)
+Runtime.getRuntime().exec("convert " + input_path + " " + output_path)
+```
+
+### LDAP Injection
+
+```
+filter = "(uid=" + username + ")"
+filter = "(&(cn=" + search_term + ")(objectClass=user))"
+filter = "(mail=" + email + ")"
+```
+
+### Code Injection
+
+```
+eval("process(" + user_data + ")")
+exec(user_provided_script)
+Function(user_input)()
+new Function("return " + user_json)()
+deserialize(untrusted_bytes)
+```
+
+## Secure Patterns
+
+### SQL: Parameterized Queries / Prepared Statements
+
+```
+stmt = db.prepare("SELECT * FROM users WHERE id = ?")
+stmt.execute(user_id)
+
+stmt = db.prepare("SELECT * FROM users WHERE name = ? AND active = ?")
+stmt.execute(username, true)
+
+stmt = db.prepare("INSERT INTO logs (user_id, action) VALUES (?, ?)")
+stmt.execute(user_id, action)
+```
+
+Use placeholders (?, :name, $1) for all dynamic values. Never interpolate table names, column names, or sort orders from user input. For dynamic identifiers, use an allowlist:
+
+```
+allowed_columns = ["name", "email", "created_at"]
+column = allowed_columns.includes(user_column) ? user_column : "name"
+stmt = db.prepare("SELECT " + column + " FROM users WHERE id = ?")
+```
+
+### NoSQL: Parameterized Queries and Schema Validation
+
+```
+db.users.find({ username: sanitized_username })
+db.users.findOne({ _id: ObjectId(validated_id) })
+```
+
+Avoid `$where` with user input. For dynamic queries, validate and constrain:
+
+```
+allowed_ops = { "$eq": true, "$gt": true, "$lt": true }
+if (allowed_ops[operator]) {
+  db.collection.find({ field: { [operator]: value } })
+}
+```
+
+### OS Commands: Avoid Shell, Use Allowlists
+
+Prefer library APIs over shell commands:
+
+```
+fs.readdirSync(path)
+fs.readFile(path, encoding)
+http.get(url)
+```
+
+When commands are necessary, avoid shell invocation and use allowlists:
+
+```
+allowed_commands = ["backup", "restore", "status"]
+if (!allowed_commands.includes(command)) { reject() }
+args = [command, "--path", validated_path]
+spawn(executable, args, { shell: false })
+```
+
+Validate each argument against an allowlist or strict regex. Never pass unsanitized user input to `system`, `exec`, `eval`, or shell scripts.
+
+### LDAP: Parameterized Filters / Escaping
+
+```
+filter = "(uid=" + escape_ldap(username) + ")"
+```
+
+Escape `*`, `(`, `)`, `\`, `\0`, `/` per RFC 4515. Prefer LDAP libraries that support parameterized filters.
+
+### Code: No eval/exec with User Data
+
+```
+parsed = JSON.parse(user_json)
+```
+
+Use safe parsers (JSON.parse, XML parsers with disabled external entities). Never deserialize untrusted data into executable objects. For dynamic logic, use a sandboxed DSL or server-side templates with restricted capabilities.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A03:2021 – Injection |
+| CWE | 89 (SQL Injection) |
+| CWE | 78 (OS Command Injection) |
+| CWE | 77 (Command Injection) |
+| CWE | 90 (LDAP Injection) |
+| CWE | 94 (Code Injection) |

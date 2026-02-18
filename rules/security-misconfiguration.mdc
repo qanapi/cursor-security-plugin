@@ -1,0 +1,163 @@
+---
+description: Prevents insecure defaults, unnecessary features, debug mode in production, default credentials, and missing security headers
+alwaysApply: true
+---
+
+# Security Misconfiguration
+
+## Vulnerability Description
+
+Security misconfiguration occurs when applications ship with insecure defaults, unnecessary features enabled, debug or verbose modes active in production, default credentials left in place, or missing security headers. Attackers exploit these gaps to gain unauthorized access, leak sensitive information, or escalate privileges. Misconfiguration affects application code, frameworks, servers, cloud resources, and containers.
+
+## Anti-Patterns to Avoid
+
+### Debug or Verbose Mode in Production
+
+```
+DEBUG=true
+LOG_LEVEL=debug
+VERBOSE=1
+app.run(debug=True)
+logger.setLevel(DEBUG)
+```
+
+### Default Credentials
+
+```
+username = "admin"
+password = "admin123"
+db_password = "password"
+API_KEY = "changeme"
+```
+
+### Unnecessary HTTP Methods Enabled
+
+```
+allow_methods = ["GET", "POST", "PUT", "DELETE", "TRACE", "CONNECT"]
+```
+
+### Missing Security Headers
+
+```
+response.headers["Content-Type"] = "application/json"
+return response
+```
+
+### Exposing Stack Traces or Error Details
+
+```
+catch (error) {
+  return { message: error.stack }
+}
+```
+
+### Unnecessary Services or Ports Exposed
+
+```
+listen(0.0.0.0, 22)
+listen(0.0.0.0, 3306)
+expose_all_ports()
+```
+
+### Overly Permissive Cloud or Container Configurations
+
+```
+privileged: true
+cap_add: ["ALL"]
+network_mode: host
+```
+
+### Storing Secrets in Configuration Files
+
+```
+config = {
+  db_password: "secret123",
+  api_key: "sk-xxx"
+}
+```
+
+## Secure Patterns
+
+### Disable Debug and Verbose Modes in Production
+
+```
+if (env == "production") {
+  DEBUG = false
+  LOG_LEVEL = "warn"
+}
+app.run(debug=(env != "production"))
+```
+
+Use environment variables to control behavior. Never enable debug, trace, or verbose logging in production. Ensure error responses do not expose stack traces or internal paths.
+
+### Remove Default Accounts and Passwords
+
+```
+if (username == "admin" && password == "admin123") {
+  reject()
+}
+```
+
+Require password change on first login. Never ship with default credentials. Use secrets management for all credentials; never hardcode.
+
+### Disable Unnecessary HTTP Methods
+
+```
+allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+if (!allowed_methods.includes(request.method)) {
+  return error(405)
+}
+```
+
+Explicitly allow only required methods. Disable TRACE, CONNECT, and other methods not needed by the application.
+
+### Set Security Headers
+
+```
+response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+response.headers["X-Content-Type-Options"] = "nosniff"
+response.headers["X-Frame-Options"] = "DENY"
+response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'"
+response.headers["X-XSS-Protection"] = "1; mode=block"
+response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+```
+
+Set HSTS to enforce HTTPS. Use X-Content-Type-Options: nosniff to prevent MIME sniffing. Use X-Frame-Options or CSP frame-ancestors to prevent clickjacking. Define CSP to restrict script and resource sources.
+
+### Keep Configurations Minimal and Hardened
+
+```
+minimal_install = true
+disable_unused_modules()
+```
+
+Disable unused features, modules, and endpoints. Apply principle of least privilege to services and processes.
+
+### Review Cloud and Container Configurations
+
+```
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  drop: ["ALL"]
+  add: ["NET_BIND_SERVICE"]
+```
+
+Run as non-root. Use read-only filesystems where possible. Drop unnecessary capabilities. Avoid privileged mode and host network. Restrict network exposure to required ports only.
+
+### Use Secrets Management
+
+```
+password = secrets.get("DB_PASSWORD")
+api_key = env.get_required("API_KEY")
+```
+
+Load credentials from environment variables or a secrets manager. Never commit secrets to source control.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A05:2021 – Security Misconfiguration |
+| CWE | 16 – Configuration |
+| CWE | 1188 – Insecure Default Initialization of Resource |

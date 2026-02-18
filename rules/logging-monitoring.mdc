@@ -1,0 +1,226 @@
+---
+description: Ensures sufficient logging and security event monitoring for detection and forensics
+alwaysApply: true
+---
+
+# Logging and Monitoring
+
+## Vulnerability Description
+
+Insufficient logging and monitoring leave security incidents undetected and make forensic investigation impossible. Without logging authentication failures, access control failures, and input validation failures, attackers can probe and exploit systems without triggering alerts. Logging sensitive data (passwords, tokens, PII, credit cards) creates new attack surfaces and compliance violations. Missing correlation IDs prevent tracing requests across services. Tamperable logs undermine accountability. Lack of alerting on suspicious patterns delays incident response.
+
+## Anti-Patterns to Avoid
+
+### Not Logging Authentication Events
+
+```
+if (password_match) {
+  create_session(user)
+}
+return error
+```
+
+### Not Logging Access Control Failures
+
+```
+if (!has_permission(user, resource)) {
+  return 403
+}
+```
+
+### Not Logging Input Validation Failures
+
+```
+if (!is_valid_email(email)) {
+  return "Invalid email"
+}
+```
+
+### Logging Sensitive Data
+
+```
+log("Login attempt", { username: user, password: password })
+log("Request", { headers: request.headers })
+log("Token: " + jwt_token)
+log("Card number: " + card_number)
+log("SSN: " + ssn)
+```
+
+### Unstructured or Unparseable Logs
+
+```
+print("User " + user + " did something at " + time)
+log("Error: " + error_message)
+```
+
+### No Correlation or Request IDs
+
+```
+log("Processing started")
+log("Database query executed")
+log("Response sent")
+```
+
+### Inappropriate Log Levels
+
+```
+log_debug("User authenticated")
+log_info("Password changed")
+log_error("Invalid input")
+```
+
+### Logs Stored Without Tamper Resistance
+
+```
+logs: plain text files, world-readable
+no_integrity: true
+```
+
+### No Alerting on Suspicious Patterns
+
+```
+log("Failed login", { user: user })
+```
+
+### Insufficient Context for Forensics
+
+```
+log("Access denied")
+```
+
+## Secure Patterns
+
+### Log All Authentication Events
+
+```
+log_event("auth_success", { user_id: user.id, method: "password", ip: request.ip })
+log_event("auth_failure", { username: attempted_user, reason: "invalid_password", ip: request.ip })
+log_event("auth_failure", { username: attempted_user, reason: "account_locked", ip: request.ip })
+log_event("auth_logout", { user_id: user.id })
+log_event("password_changed", { user_id: user.id })
+```
+
+Log both successes and failures. Include user identifier (not password), method, outcome, and source IP. Use consistent event names for querying.
+
+### Log Access Control Failures
+
+```
+log_event("access_denied", {
+  user_id: user.id,
+  resource: resource_id,
+  action: attempted_action,
+  reason: "insufficient_permissions",
+  ip: request.ip
+})
+```
+
+Log when a user attempts an action they are not authorized for. Include user, resource, action, and reason. Do not log full request bodies that may contain sensitive data.
+
+### Log Input Validation Failures
+
+```
+log_event("validation_failure", {
+  field: field_name,
+  value_hash: hash(sanitized_for_log(value)),
+  rule: "email_format",
+  ip: request.ip
+})
+```
+
+Log validation failures that may indicate probing or attack attempts. Hash or truncate values to avoid logging sensitive input. Include field and rule for pattern analysis.
+
+### Use Structured Logging
+
+```
+log_json({
+  timestamp: iso8601(now()),
+  level: "warn",
+  event: "auth_failure",
+  user_id: null,
+  username_hash: hash(attempted_user),
+  ip: request.ip,
+  request_id: request.id
+})
+```
+
+Use JSON or another structured format. Include timestamp, level, event type, and relevant identifiers. Enable efficient querying and aggregation.
+
+### Never Log Sensitive Data
+
+```
+log_event("auth_failure", { username_hash: hash(username), ip: request.ip })
+log_event("request", { path: request.path, method: request.method })
+```
+
+Never log passwords, tokens, API keys, session IDs, PII, credit card numbers, or health data. Redact or hash identifiers when needed for correlation. Use allowlists for loggable fields.
+
+### Include Correlation IDs
+
+```
+request_id = generate_uuid()
+context.set("request_id", request_id)
+log_event("request_start", { request_id: request_id, path: request.path })
+log_event("db_query", { request_id: request_id, query_id: query_id })
+log_event("response_sent", { request_id: request_id, status: 200 })
+```
+
+Propagate a request or correlation ID through the call stack. Include it in every log entry for that request. Pass across service boundaries via headers.
+
+### Set Appropriate Log Levels
+
+```
+log_debug("Cache hit", { key: key })
+log_info("Server started", { port: port })
+log_warn("Rate limit approaching", { user_id: user.id })
+log_error("Database connection failed", { error: error_code })
+```
+
+Use debug for development diagnostics, info for operational events, warn for potential issues, error for failures. Avoid logging sensitive data at any level.
+
+### Ensure Logs Are Tamper-Resistant
+
+```
+write_log_to_append_only_stream()
+log_aggregation_with_integrity_checks()
+restrict_log_file_permissions(owner_only)
+```
+
+Write logs to append-only destinations. Restrict file permissions. Use centralized logging with integrity verification where possible.
+
+### Set Up Alerting for Suspicious Patterns
+
+```
+alert_on: multiple_auth_failures_from_same_ip(threshold=5, window=5m)
+alert_on: access_denied_spike(threshold=100, window=1h)
+alert_on: validation_failure_spike(threshold=50, window=5m)
+alert_on: privilege_escalation_attempt
+alert_on: sensitive_data_access_pattern
+```
+
+Define thresholds for authentication failures, access denials, and validation failures. Alert on privilege escalation attempts and anomalous access patterns. Tune thresholds to reduce false positives.
+
+### Log Enough Context for Forensics
+
+```
+log_event("access_denied", {
+  user_id: user.id,
+  resource_type: "document",
+  resource_id: resource_id,
+  action: "delete",
+  ip: request.ip,
+  user_agent: request.user_agent,
+  request_id: request.id,
+  timestamp: now()
+})
+```
+
+Include user, resource, action, source (IP, user agent), and timing. Ensure logs support answering "who did what, when, from where" without logging sensitive payloads.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A09:2021 – Security Logging and Monitoring Failures |
+| CWE | 778 – Insufficient Logging |
+| CWE | 223 – Omission of Important Information |
+| CWE | 532 – Insertion of Sensitive Information into Log File |

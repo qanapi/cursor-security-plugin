@@ -1,0 +1,201 @@
+---
+description: Access control for authorization, IDOR prevention, privilege escalation, and function-level security
+alwaysApply: true
+---
+
+# Access Control
+
+## Vulnerability Description
+
+Broken access control occurs when applications fail to enforce authorization on every request, rely on client-side checks, or expose resources through predictable or manipulable identifiers. Attackers exploit missing or weak authorization to access other users' data (IDOR), escalate privileges, bypass function-level checks, or perform actions outside intended permissions. Authorization must be enforced server-side on every request; client-side controls are trivially bypassed.
+
+## Anti-Patterns to Avoid
+
+### Missing Server-Side Authorization
+
+```
+def get_order(order_id):
+    return db.get_order(order_id)
+
+def delete_user(user_id):
+    db.delete_user(user_id)
+```
+
+### Client-Side Only Access Control
+
+```
+if (user.role === "admin") {
+    show_admin_panel()
+}
+if (user.id === resource.owner_id) {
+    show_edit_button()
+}
+```
+
+### Direct Object References Without Validation
+
+```
+GET /api/orders/12345
+GET /api/users/67890/profile
+GET /api/documents/abc123
+```
+
+### Trusting Client-Supplied Roles or Permissions
+
+```
+role = request.body.role
+user.role = role
+if (request.headers["X-Admin"] === "true") {
+    grant_admin_access()
+}
+```
+
+### Insecure Direct Object Reference (IDOR)
+
+```
+resource = db.get_by_id(request.params.id)
+return resource
+```
+
+### Horizontal Privilege Escalation
+
+```
+def transfer_funds(from_account, to_account, amount):
+    debit(from_account, amount)
+    credit(to_account, amount)
+```
+
+### Vertical Privilege Escalation
+
+```
+if (request.path === "/admin") {
+    return admin_dashboard()
+}
+```
+
+## Secure Patterns
+
+### Enforce Authorization on Every Request
+
+```
+def get_order(order_id, current_user):
+    order = db.get_order(order_id)
+    if not order:
+        return 404
+    if not can_access(current_user, order):
+        log_access_denied(current_user, order_id)
+        return 403
+    return order
+```
+
+Perform authorization check after fetching the resource. Return 404 when resource does not exist; return 403 when user lacks permission. Never return 404 to hide existence from unauthorized users if that leaks information.
+
+### Deny by Default
+
+```
+def handle_request(request):
+    if not is_authenticated(request):
+        return 401
+    if not has_permission(request.user, request.resource, request.action):
+        return 403
+    return execute_action(request)
+```
+
+Require explicit grant for every action. Default to deny. Document and enforce permission model consistently.
+
+### Indirect Object References
+
+```
+user_tokens = {
+    "alice_orders": ["o1", "o2", "o3"],
+    "bob_orders": ["o4", "o5"]
+}
+token = request.params.list_token
+order_ids = user_tokens.get(current_user.id, [])
+if order_id not in order_ids:
+    return 403
+order = db.get_order(order_id)
+```
+
+Map opaque tokens to internal IDs. Validate that the token belongs to the current user before resolving. Prefer UUIDs over sequential IDs for public exposure.
+
+### Validate Ownership Before Granting Access
+
+```
+def get_document(doc_id, current_user):
+    doc = db.get_document(doc_id)
+    if not doc:
+        return 404
+    if doc.owner_id != current_user.id and not current_user.has_role("admin"):
+        log_access_denied(current_user, doc_id)
+        return 403
+    return doc
+```
+
+Check resource ownership or role-based permission. Use consistent authorization logic across all endpoints.
+
+### Role-Based Access Control (RBAC)
+
+```
+permissions = {
+    "user": ["read_own_profile", "update_own_profile", "list_own_orders"],
+    "support": ["read_any_profile", "list_any_orders"],
+    "admin": ["*"]
+}
+def check_permission(user, resource, action):
+    user_perms = permissions.get(user.role, [])
+    if "*" in user_perms:
+        return True
+    required = f"{action}_{resource}"
+    return required in user_perms or f"{action}_any_{resource}" in user_perms
+```
+
+Define roles and permissions explicitly. Check permission for each action. Avoid wildcards unless intentional.
+
+### Attribute-Based Access Control (ABAC)
+
+```
+def can_access(user, resource, action):
+    if action == "read" and resource.sensitivity == "public":
+        return True
+    if resource.department == user.department and user.clearance >= resource.clearance:
+        return True
+    if resource.owner_id == user.id:
+        return True
+    return False
+```
+
+Evaluate attributes of user, resource, and context. Use for fine-grained policies (department, clearance, time, location).
+
+### Never Rely on Client-Side Access Control
+
+```
+def api_delete_resource(resource_id):
+    if not has_permission(current_user, "delete", resource_id):
+        return 403
+    db.delete(resource_id)
+    return 204
+```
+
+All authorization decisions must occur server-side. Client-side checks are for UX only. Assume clients can be modified or bypassed.
+
+### Log Access Control Failures
+
+```
+if not can_access(user, resource):
+    log_event("access_denied", user_id=user.id, resource=resource.id, action=requested_action)
+    alert_if_suspicious(user, resource)
+    return 403
+```
+
+Log denied attempts with user, resource, and action. Monitor for patterns indicating abuse or enumeration. Retain logs for forensics.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| OWASP Top 10 2021 | A01:2021 – Broken Access Control |
+| CWE | 862 – Missing Authorization |
+| CWE | 863 – Incorrect Authorization |
+| CWE | 639 – Authorization Bypass Through User-Controlled Key |
+| CWE | 284 – Improper Access Control |

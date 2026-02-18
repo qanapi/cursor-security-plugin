@@ -1,0 +1,203 @@
+---
+description: Enforces secure-by-default patterns for transport, cookies, headers, and access control
+alwaysApply: true
+---
+
+# Secure Defaults
+
+## Vulnerability Description
+
+Insecure defaults leave applications vulnerable even when developers do not explicitly choose dangerous options. HTTP (instead of HTTPS) exposes credentials and data to interception. Cookies without Secure, HttpOnly, and SameSite attributes are susceptible to theft via XSS or network sniffing. Missing security headers allow clickjacking, MIME sniffing, and other client-side attacks. Permissive default access allows unauthorized access when authorization checks are omitted. Fail-open behavior grants access during errors. Overly broad file permissions or service accounts amplify the impact of compromise. Unnecessary features and endpoints increase attack surface.
+
+## Anti-Patterns to Avoid
+
+### Using HTTP for Sensitive Traffic
+
+```
+url = "http://api.example.com/login"
+redirect_to("http://" + request.host + request.path)
+```
+
+### Insecure Cookie Attributes
+
+```
+Set-Cookie: session=abc123
+Set-Cookie: token=xyz; Path=/
+Set-Cookie: pref=dark; Secure
+```
+
+### Missing Security Response Headers
+
+```
+Content-Type: text/html
+```
+
+### Allowlist-by-Exception (Deny by Exception)
+
+```
+if (user in blocked_list) {
+  deny()
+}
+allow()
+```
+
+### Fail-Open on Errors
+
+```
+try {
+  auth_result = check_permission(user, resource)
+} catch (e) {
+  allow()
+}
+```
+
+### Overprivileged File Permissions
+
+```
+chmod 777 uploads/
+chmod 666 config.json
+```
+
+### Overprivileged Service Accounts
+
+```
+db_user = "root"
+service_account = "Administrator"
+```
+
+### Directory Listings Enabled
+
+```
+autoindex on
+Options +Indexes
+```
+
+### Unnecessary Features or Endpoints Exposed
+
+```
+/debug
+/phpinfo
+/admin (no auth)
+/status (internal details)
+```
+
+## Secure Patterns
+
+### Use HTTPS Everywhere
+
+```
+redirect_http_to_https: true
+strict_transport_security: true
+all_internal_links: https://
+```
+
+Redirect all HTTP to HTTPS. Enforce TLS for all connections. Use HSTS to prevent downgrade attacks. Never transmit credentials or sensitive data over HTTP.
+
+### Set Secure Cookie Attributes
+
+```
+Set-Cookie: session=abc123; Secure; HttpOnly; SameSite=Strict; Path=/
+Set-Cookie: session=abc123; Secure; HttpOnly; SameSite=Lax; Path=/
+```
+
+Secure: send only over HTTPS. HttpOnly: not accessible via JavaScript (mitigates XSS cookie theft). SameSite=Strict or Lax: mitigates CSRF. Use Strict for sensitive sessions, Lax when cross-site navigation is required.
+
+### Set Security Response Headers
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Content-Security-Policy: default-src 'self'; script-src 'self'
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+```
+
+HSTS: enforce HTTPS. CSP: restrict script and resource origins. X-Content-Type-Options: prevent MIME sniffing. X-Frame-Options: prevent clickjacking. Referrer-Policy: limit referrer leakage. Permissions-Policy: disable unnecessary browser features.
+
+### Deny by Default, Then Allowlist
+
+```
+def access_allowed(user, resource, action):
+  if not user.authenticated:
+    return False
+  if action not in ALLOWED_ACTIONS:
+    return False
+  return user.has_permission(resource, action)
+```
+
+Default to deny. Explicitly allow only what is required. Use allowlists for actions, resources, and attributes. Reject unknown or unexpected input.
+
+### Fail Closed on Errors
+
+```
+try {
+  auth_result = check_permission(user, resource)
+  if not auth_result:
+    deny()
+  allow()
+} catch (e) {
+  log_error(e)
+  deny()
+}
+```
+
+On authentication or authorization failure, deny access. On unexpected errors in security-critical paths, deny. Do not default to allow when checks fail.
+
+### Use Least Privilege for File Permissions
+
+```
+chmod 750 uploads/
+chmod 600 config.json
+chmod 755 public/
+```
+
+Restrict write access to directories that require it. Restrict config and secret files to owner only. Give executables minimal required permissions.
+
+### Use Least Privilege for Service Accounts
+
+```
+db_user = "app_readwrite"
+aws_role = "app-s3-upload-only"
+```
+
+Create dedicated service accounts with minimal permissions. Grant only the capabilities required for the task. Avoid shared admin or root accounts.
+
+### Disable Directory Listings
+
+```
+autoindex off
+Options -Indexes
+```
+
+Disable directory listing for all web-accessible directories. Prevent enumeration of internal paths and files.
+
+### Remove Unnecessary Features and Endpoints
+
+```
+disable: debug endpoints in production
+disable: default admin accounts
+disable: unused protocols and ports
+remove: deprecated APIs
+```
+
+Disable debug, diagnostic, and management endpoints in production. Remove or protect default accounts. Expose only required ports and protocols. Deprecate and remove unused functionality.
+
+### Validate Default Configuration at Startup
+
+```
+assert(https_redirect_enabled)
+assert(cookie_secure_flag)
+assert(security_headers_configured)
+```
+
+Validate that secure defaults are applied at startup. Fail fast if critical security settings are missing or incorrect.
+
+## Standards Mapping
+
+| Standard | ID |
+|----------|-----|
+| CWE | 276 – Incorrect Default Permissions |
+| CWE | 732 – Incorrect Permission Assignment for Critical Resource |
+| CWE | 16 – Configuration |
+| OWASP | Secure by Default |
