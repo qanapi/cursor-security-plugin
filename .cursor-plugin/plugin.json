@@ -1,5 +1,6 @@
 {
   "name": "qanapi-security",
+  "displayName": "Qanapi Security",
   "version": "1.0.0",
   "description": "Security review and compliance enforcement plugin by Qanapi. Covers OWASP Top 10, SANS/CWE Top 25, and secure coding best practices.",
   "author": {
